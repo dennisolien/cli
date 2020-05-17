@@ -1,6 +1,6 @@
-const { args , cwd, env} = Deno;
+const { args, env} = Deno;
 import { parse } from 'https://deno.land/std@0.51.0/flags/mod.ts';
-import { ensureDir, ensureFile, readFileStr, writeFileStr, walk } from "https://deno.land/std@0.51.0/fs/mod.ts";
+import { ensureDir, ensureFile, readFileStr, writeFileStr, walk, exists } from "https://deno.land/std@0.51.0/fs/mod.ts";
 
 const inputArgs = parse(args);
 
@@ -26,9 +26,6 @@ async function updateBashProfile(ref) {
   return writeFileStr(bashProfilePath, `${org}\n${ref}`);
 }
 
-
-
-
 const commands = {
   create: {
     alias: async (flags) => {
@@ -38,7 +35,6 @@ const commands = {
       if (!alias || !originalCommand) {
         return null;
       }
-      const path = cwd(); // TEMP use user root .bs/
       const aliasGlobal = aliasesPath('global');
       const aliasProject = aliasesPath('project');
       await ensureDir(aliasGlobal);
@@ -77,8 +73,50 @@ const commands = {
         console.log(errorString);
       }
     }
-  }
-}
+  },
+  save: {
+    alias: (flags) => {
+      // TODO: commit the aliases.
+    },
+  },
+  load: {
+    alias: async (flags) => {
+      const aliasProject = aliasesPath('project');
+      const getGitRemote = Deno.run({
+        cmd: ['git', 'remote', '-v'],
+        stdout: "piped",
+        stderr: "piped",
+      });
+      const { code } = await getGitRemote.status();
+
+      if (code === 0) {
+        const rawOutput = await getGitRemote.output();
+        const gitRemoteString = new TextDecoder().decode(rawOutput);
+        // TODO: regEx
+        const pName = gitRemoteString.split('\n')[0]
+          .replace('origin\t', '')
+          .replace('(fetch)', '')
+          .replace(' ', '');
+
+        const str = `${aliasProject}/${pName}/index.sh`;
+        // TODO: this returns 404...
+        // await ensureFile(str)
+        // const load = Deno.run({
+        //   cmd: ['eval', `source ${str}`],
+        // });
+        // return load.status();
+        return console.log(`source ${str}`)
+      } else {
+        const rawError = await getGitRemote.stderrOutput();
+        const errorString = new TextDecoder().decode(rawError);
+        console.log(errorString);
+      }
+    },
+    bash: (flags) => {
+      // TODO: reload bash_profile
+    },
+  },
+};
 
 function runner(input) {
   const { _, ...rest } = input;
