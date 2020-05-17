@@ -1,4 +1,4 @@
-const { args , cwd, env} = Deno;
+const { args, env} = Deno;
 import { parse } from 'https://deno.land/std@0.51.0/flags/mod.ts';
 import { ensureDir, ensureFile, readFileStr, writeFileStr, walk } from "https://deno.land/std@0.51.0/fs/mod.ts";
 
@@ -38,7 +38,6 @@ const commands = {
       if (!alias || !originalCommand) {
         return null;
       }
-      const path = cwd(); // TEMP use user root .bs/
       const aliasGlobal = aliasesPath('global');
       const aliasProject = aliasesPath('project');
       await ensureDir(aliasGlobal);
