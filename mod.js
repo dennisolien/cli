@@ -33,8 +33,8 @@ const commands = {
   create: {
     alias: async (flags) => {
       const isGlobal = (flags.g || flags.global);
-      const originalCommand = flags.org;
-      const alias = flags.alias;
+      const originalCommand = flags.org || flags.o;
+      const alias = flags.alias || flags.a;
       if (!alias || !originalCommand) {
         return null;
       }
