@@ -52,18 +52,30 @@ const commands = {
         return true
       }
 
-      // TODO: get the git remote origin `/alias/project/${origin}/${alias}.sh
-      return writeFileStr(`${aliasProject}/${alias}.sh`, `alias ${alias}="${originalCommand}"`);
+      const getGitRemote = Deno.run({
+        cmd: ['git', 'remote', '-v'],
+        stdout: "piped",
+        stderr: "piped",
+      });
+      const { code } = await getGitRemote.status();
 
-      /**
-       * TODO:
-       * 1. X create global alias folder
-       * 2. X create projects alias folder
-       * 2.2 have sub folder, named after the projects git remote origin
-       * 3. X alias folders new file for each alias.
-       * 4. X export to bash_profile
-       * 5. prompt user to create git repo to store aliases.
-       */
+      if (code === 0) {
+        const rawOutput = await getGitRemote.output();
+        const gitRemoteString = new TextDecoder().decode(rawOutput);
+        // TODO: regEx
+        const pName = gitRemoteString.split('\n')[0]
+          .replace('origin\t', '')
+          .replace('(fetch)', '')
+          .replace(' ', '');
+        await ensureDir(`${aliasProject}/${pName}`);
+        await writeFileStr(`${aliasProject}/${pName}/${alias}.sh`, `alias ${alias}="${originalCommand}"`);
+        await buildBashIndex(`${aliasProject}/${pName}`);
+        console.log(`To add alias to terminal session run: 'source ${aliasProject}/${pName}/index.sh'`)
+      } else {
+        const rawError = await getGitRemote.stderrOutput();
+        const errorString = new TextDecoder().decode(rawError);
+        console.log(errorString);
+      }
     }
   }
 }
