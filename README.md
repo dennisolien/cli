@@ -1,4 +1,4 @@
-## DO NOT USE THIS :P
+## DO NOT USE THIS 💀
 
 I do not recommend anyone to use this...
 
@@ -15,7 +15,7 @@ You can also create global aliases by passing the `-g` flag, this will add a `so
 **--allow-read/write** to create .sh fils to store aliases, and read/update bash_profile (reason one to not use this, it can mess up your bash_profile)
 **--allow-run** use it to get `git remote -v` for the folder name of the project aliases. (reason two to not use this)
 
-### Install:
+### Install 🦕:
   1. `deno install --allow-env --allow-read --allow-write --allow-run --unstable -n bs https://raw.githubusercontent.com/dennisolien/cli/master/mod.js`
   
 ### Create global alias
