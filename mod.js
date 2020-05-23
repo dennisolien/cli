@@ -151,8 +151,33 @@ const commands = {
   },
 };
 
+function isHelp(params, flags) {
+  const needHelp = flags.h || flags.help;
+  if (!needHelp) {
+    return null;
+  }
+  if (params.length < 1) {
+    // compile global help;
+    // return global help;
+    return () => console.log('help is on its way');
+  }
+  const func = params.reduce((result, name) => {
+    if (!result[name]) {
+      // TODO: return help
+      throw new Error('Not a command');
+    } 
+    return result[name];
+   }, commands);
+  return !func.help ? () => console.log('help is on its way') : func.help;
+}
+
+
 function runner(input) {
   const { _, ...rest } = input;
+  const needHelp = isHelp(_, rest);
+  if (needHelp) {
+    return needHelp();
+  }
   if (_[0] === 'r' || _[0] === 'run') {
     const params = [..._].slice(1);
     return commands.run.exec(params, rest);
@@ -163,7 +188,7 @@ function runner(input) {
      throw new Error('Not a command');
    } 
    return result[name];
-  }, commands)
+  }, commands);
   if (typeof func.exec !== 'function') {
     // TODO: return help
     return logger.info('Missing props');
