@@ -2,100 +2,10 @@
 
 const { args, env} = Deno;
 import { parse } from 'https://deno.land/std@0.51.0/flags/mod.ts';
-import { ensureDir, readFileStr, writeFileStr, walk } from "https://deno.land/std@0.51.0/fs/mod.ts";
 import * as logger from 'https://deno.land/std/log/mod.ts';
+import * as bsFs from './fs.js';
 
 const inputArgs = parse(args);
-
-/**
- * 1. X Easy to create alias
- * 2. X Scoped alias
- * 3. X easy to load scoped alias
- * 4. create scripts, to automate tasks, should run bash and JS/Deno
- * 5. X move to .bin folder
- * 6. X bash link to .bin/global
- * 7. X load from bin/project/[git origin of project]
- */
-
-const bashProfilePath = `${env.get('HOME')}/.bash_profile`;
-
-const bsHome = `${env.get('HOME')}/.bs`;
-const bsBin = `${bsHome}/bin`;
-const bsGlobals = `${bsBin}/global`;
-const bsProjects = `${bsBin}/project`;
-const bsProject = (projectName) => `${bsProjects}/${projectName}`;
-const bsAliasMain = (aliasDir) => `${aliasDir}/main.sh`;
-
-const createAliasFilePath = (dir, name) => `${dir}/${name}.sh`
-const createAliasStr = (name, command) => `alias ${name}="${command}"`
-
-const toSourceString = (filePath) => `source ${filePath}`;
-
-async function ensureBs() {
-  await ensureDir(bsGlobals);
-  await ensureDir(bsProjects);
-  return true;
-}
-
-
-async function upsertFolderMain(aliasDir) {
-  const aliases = [];
-  const mainPath = bsAliasMain(aliasDir);
-  for await (const entry of walk(aliasDir)) {
-    if (entry && entry.isFile && entry.name !== 'main.sh') {
-      const alias = await readFileStr(`${aliasDir}/${entry.name}`, { encoding: 'utf8' });
-      aliases.push(alias);
-    }
-  }
-  await writeFileStr(mainPath, aliases.join('\n'));
-  return mainPath;
-}
-
-async function updateBashProfile(source) {
-  const org = await readFileStr(bashProfilePath, { encoding: 'utf8' });
-  if (org.includes(source)) {
-    return true;
-  }
-  return writeFileStr(bashProfilePath, `${org}\n${source}\n`);
-}
-
-async function createAliasFile(dir, name, command) {
-  const filePath = createAliasFilePath(dir, name);
-  const aliasString = createAliasStr(name, command);
-
-  await writeFileStr(filePath, aliasString);
-  return {
-    filePath,
-    aliasString,
-  };
-}
-
-async function getProjectDir(aliasDir, name) {
-  const getGitRemote = Deno.run({
-    cmd: ['git', 'remote', '-v'],
-    stdout: "piped",
-    stderr: "piped",
-  });
-  const { code } = await getGitRemote.status();
-  if (code === 0) {
-    const rawOutput = await getGitRemote.output();
-    const gitRemoteString = new TextDecoder().decode(rawOutput);
-    // TODO: regEx
-    const projectName = gitRemoteString.split('\n')[0]
-      .replace('origin\t', '')
-      .replace('(fetch)', '')
-      .replace(' ', '')
-      .replace('.git', '');
-
-    const projectPath = bsProject(projectName);
-    await ensureDir(projectPath);
-    return projectPath;
-  } else {
-    const errorString = new TextDecoder().decode(rawError);
-    logger.error(errorString);
-    throw new Error('Unable to get the git remote Origin');
-  }
-}
 
 const commands = {
   create: {
@@ -104,7 +14,7 @@ const commands = {
         const isGlobal = (flags.g || flags.global);
         const originalCommand = flags.org || flags.o;
         const name = flags.name || flags.n;
-        const aliasDir = isGlobal ? bsGlobals : await getProjectDir();
+        const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
 
         if (!name || !originalCommand) {
           // TODO: return help
@@ -113,19 +23,21 @@ const commands = {
           );
         }
 
-        await ensureBs();
+        await bsFs.ensureBs();
 
-        const { aliasPath, aliasString } = await createAliasFile(aliasDir, name, originalCommand);
-        const aliasMainPath = await upsertFolderMain(aliasDir)
-        const sourceString = toSourceString(aliasMainPath);
+        const { aliasPath, aliasString } = await bsFs.createAliasFile(
+          aliasDir, name, originalCommand
+        );
+        const aliasMainPath = await bsFs.upsertFolderMain(aliasDir)
+        const sourceString = bsFs.toSourceString(aliasMainPath);
 
         if (isGlobal) {
-          await updateBashProfile(sourceString);
+          await bsFs.updateBashProfile(sourceString);
           // TODO: this returns 404 not found... why?
           // const sourceFile = Deno.run({
           //   cmd: ['source', aliasMainPath],
           // });
-          return console.log(toSourceString(bashProfilePath));
+          return console.log(bsFs.toSourceString(bsFs.bashProfilePath));
         }
 
         return console.log(sourceString);
@@ -134,31 +46,149 @@ const commands = {
         logger.info('TODO: add help')
       },
     },
+    project: {
+      exec: async (flags) => {
+        const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
+        return logger.info(`Project folder at: ${projectPath}`);
+      },
+    },
+    script: {
+      exec: async (flags) => {
+        const name = flags.name || flags.n;
+        if (!name) {
+          return logger.error('Name (--name, -n), is required');
+        }
+        const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
+        return bsFs.createScript(name, projectPath);
+      },
+    },
   },
   load: {
     alias: {
       exec: async (flags) => {
         const isGlobal = (flags.g || flags.global);
-        const aliasDir = isGlobal ? bsGlobals : await getProjectDir();
-        const mainPath = bsAliasMain(aliasDir);
+        const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
+        const mainPath = bsFs.paths.alias.main(aliasDir);
         if (isGlobal) {
-          return console.log(toSourceString(bashProfilePath));
+          return console.log(bsFs.toSourceString(bsFs.bashProfilePath));
         }
-        return console.log(toSourceString(mainPath)); 
+        return console.log(bsFs.toSourceString(mainPath)); 
       },
     }
   },
+  open: {
+    project: {
+      exec: async (flags) => {
+        const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
+        const openInCode = Deno.run({
+          cmd: ['code', projectPath],
+        });
+        await openInCode.status();
+        return logger.info(`Project folder at: ${projectPath}`);
+      },
+    },
+  },
+  ls: {
+    exec: async (flags) => {
+      const aliasesFileNames = [];
+      const scriptsFileNames = [];
+      const result = {};
+
+      const alias = flags.a || flags.alias;
+      const isGlobal = flags.g || flags.global;
+      const scripts = flags.s || flags.script;
+
+      const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
+      const scriptDir = isGlobal ? bsFs.paths.bin.globals : await bsFs.getProjectDir(bsFs.paths.bin.project);
+
+      const getScriptsAndAliases = (!alias && !scripts);
+      if (getScriptsAndAliases || scripts) {
+        const scriptsNames = await bsFs.getFileNames(scriptDir, false);
+        scriptsFileNames.push(...scriptsNames);
+        Object.assign(result, {
+          scripts: scriptsFileNames,
+        });
+      }
+      if (getScriptsAndAliases || alias) {
+        // Map to remove the file type, user do not need to know, they are exec with out.
+        const aliasesNames = (await bsFs.getFileNames(aliasDir, false)).map((item) => item.split('.')[0]);
+        aliasesFileNames.push(...aliasesNames);
+        Object.assign(result, {
+          aliases: aliasesFileNames,
+        });
+      }
+      
+      return console.log(JSON.stringify(result, null, 2))
+    },
+  },
+  run: {
+    exec: async (params, flags) => {
+      const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
+      const filePath = await bsFs.getScriptPath(params[0], projectPath);
+
+      if (!filePath) {
+        return logger.error(`Script: ${params[0]} does not exist in: ${projectPath}`);
+      }
+
+      const runScript = Deno.run({
+        cmd: ['bash', filePath],
+        stdout: "piped",
+        stderr: "piped",
+      });
+      const { code } = await runScript.status();
+      if (code === 0) {
+        const rawOutput = await runScript.output();
+        const result = new TextDecoder().decode(rawOutput);
+        return console.info(result);
+      } else {
+        const rawError = await runScript.stderrOutput();
+        const errorString = new TextDecoder().decode(rawError);
+        logger.error(errorString);
+        throw new Error('Unable to run script, error above.');
+      }
+
+    },
+  },
 };
+
+function isHelp(params, flags) {
+  const needHelp = flags.h || flags.help;
+  if (!needHelp) {
+    return null;
+  }
+  if (params.length < 1) {
+    // compile global help;
+    // return global help;
+    return () => console.log('help is on its way');
+  }
+  const func = params.reduce((result, name) => {
+    if (!result[name]) {
+      // TODO: return help
+      throw new Error('Not a command');
+    } 
+    return result[name];
+   }, commands);
+  return !func.help ? () => console.log('help is on its way') : func.help;
+}
+
 
 function runner(input) {
   const { _, ...rest } = input;
+  const needHelp = isHelp(_, rest);
+  if (needHelp) {
+    return needHelp();
+  }
+  if (_[0] === 'r' || _[0] === 'run') {
+    const params = [..._].slice(1);
+    return commands.run.exec(params, rest);
+  }
   const func = _.reduce((result, name) => {
    if (!result[name]) {
      // TODO: return help
      throw new Error('Not a command');
    } 
    return result[name];
-  }, commands)
+  }, commands);
   if (typeof func.exec !== 'function') {
     // TODO: return help
     return logger.info('Missing props');
