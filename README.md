@@ -43,7 +43,7 @@ I made this so that I can create and load aliases per project. (i know i can pro
    2. scoped only to a git repo for now.
 3. `bs load alias` flags: -g|--global;
    1. get file path to alias main file.
-4. `bs open project` flags: null;
+4. `bs open script` flags: -g|--global, -n|--name;
    1. open the scripts folder for the project. (dependent on vscode `code` command, will make it a config, maybe)
 5. `bs ls` flags: -g|--global, -a|--alias, -s|--script
    1. list scripts andOr aliases.

@@ -7,11 +7,13 @@ import * as bsFs from './fs.js';
 
 const inputArgs = parse(args);
 
+const checkGlobal = (flags) => flags.g || flags.global;
+
 const commands = {
   create: {
     alias: {
       exec: async (flags) => {
-        const isGlobal = (flags.g || flags.global);
+        const isGlobal = checkGlobal(flags);
         const originalCommand = flags.org || flags.o;
         const name = flags.name || flags.n;
         const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
@@ -55,8 +57,12 @@ const commands = {
     script: {
       exec: async (flags) => {
         const name = flags.name || flags.n;
+        const isGlobal = checkGlobal(flags);
         if (!name) {
           return logger.error('Name (--name, -n), is required');
+        }
+        if (isGlobal) {
+          return bsFs.createScript(name, bsFs.paths.bin.globals);  
         }
         const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
         return bsFs.createScript(name, projectPath);
@@ -66,7 +72,7 @@ const commands = {
   load: {
     alias: {
       exec: async (flags) => {
-        const isGlobal = (flags.g || flags.global);
+        const isGlobal = checkGlobal(flags);
         const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
         const mainPath = bsFs.paths.alias.main(aliasDir);
         if (isGlobal) {
@@ -77,14 +83,21 @@ const commands = {
     }
   },
   open: {
-    project: {
+    script: {
       exec: async (flags) => {
-        const projectPath = await bsFs.getProjectDir(bsFs.paths.bin.project);
+        // TODO: config for opening (vim|editor)
+        const isGlobal = checkGlobal(flags);
+        const fileName = flags.n || flags.name;
+        const scriptsDir = isGlobal ? bsFs.paths.bin.globals : await bsFs
+          .getProjectDir(bsFs.paths.bin.project);
+
+        const scriptPath = fileName ? `${scriptsDir}/${fileName}` : scriptsDir;
+
         const openInCode = Deno.run({
-          cmd: ['code', projectPath],
+          cmd: ['code', scriptPath],
         });
         await openInCode.status();
-        return logger.info(`Project folder at: ${projectPath}`);
+        return logger.info(`Opening: ${scriptPath}`);
       },
     },
   },
