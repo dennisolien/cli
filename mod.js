@@ -1,49 +1,62 @@
 // Copyright 2020 Dennis Lien. All rights reserved. MIT license.
 
-const { args, env} = Deno;
-import { parse } from 'https://deno.land/std@0.51.0/flags/mod.ts';
-import * as logger from 'https://deno.land/std/log/mod.ts';
+import { parse, logger } from './deps.ts';
+
 import * as bsFs from './fs.js';
+import { mainHelp, invalidCommand } from './help.ts';
+
+const { args, env} = Deno;
 
 const inputArgs = parse(args);
+
+function getPropsFromFlags(flags) {
+  const checkGlobal = (flags) => !!(flags.g || flags.global);
+  const checkHelp = (flags) => !!(flags.h || flags.help);
+
+  const getAlias = (flags) => flags.a || flags.alias || null;
+  const getName = (flags) => flags.name || flags.n || null;
+  const getOrgCommand = (flags) => flags.command || flags.c || null;
+  const getScripts = (flags) => flags.s || flags.script || null;
+
+  return {
+    isGlobal: checkGlobal(flags),
+    isHelp: checkHelp(flags),
+    alias: getAlias(flags),
+    name: getName(flags),
+    command: getOrgCommand(flags),
+    scripts: getScripts(flags),
+  };
+}
 
 const commands = {
   create: {
     alias: {
-      exec: async (flags) => {
-        const isGlobal = (flags.g || flags.global);
-        const originalCommand = flags.org || flags.o;
-        const name = flags.name || flags.n;
+      exec: async ({ isGlobal, command, name, isHelp}) => {
         const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
 
-        if (!name || !originalCommand) {
-          // TODO: return help
-          return logger.error(
-            'Name (--name, -n) and "original command" (--org, -o) is required',
-          );
+        if (!name || !command) {
+          const errStr = 'Missing required args: name (--name || -n) and command (--command || -c) is required';
+          console.log(invalidCommand(errStr));
+          return console.log(mainHelp);
         }
 
         await bsFs.ensureBs();
 
         const { aliasPath, aliasString } = await bsFs.createAliasFile(
-          aliasDir, name, originalCommand
+          aliasDir, name, command
         );
         const aliasMainPath = await bsFs.upsertFolderMain(aliasDir)
         const sourceString = bsFs.toSourceString(aliasMainPath);
 
         if (isGlobal) {
-          await bsFs.updateBashProfile(sourceString);
-          // TODO: this returns 404 not found... why?
-          // const sourceFile = Deno.run({
-          //   cmd: ['source', aliasMainPath],
-          // });
+          console.log(`Add this to your bash_profile: ${sourceString}`);
           return console.log(bsFs.toSourceString(bsFs.bashProfilePath));
         }
 
         return console.log(sourceString);
       },
       help: (flags) => {
-        logger.info('TODO: add help')
+        logger.info(mainHelp)
       },
     },
     project: {
@@ -53,8 +66,7 @@ const commands = {
       },
     },
     script: {
-      exec: async (flags) => {
-        const name = flags.name || flags.n;
+      exec: async ({ name }) => {
         if (!name) {
           return logger.error('Name (--name, -n), is required');
         }
@@ -65,8 +77,7 @@ const commands = {
   },
   load: {
     alias: {
-      exec: async (flags) => {
-        const isGlobal = (flags.g || flags.global);
+      exec: async ({ isGlobal }) => {
         const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
         const mainPath = bsFs.paths.alias.main(aliasDir);
         if (isGlobal) {
@@ -89,14 +100,10 @@ const commands = {
     },
   },
   ls: {
-    exec: async (flags) => {
+    exec: async ({ alias, isGlobal, scripts }) => {
       const aliasesFileNames = [];
       const scriptsFileNames = [];
       const result = {};
-
-      const alias = flags.a || flags.alias;
-      const isGlobal = flags.g || flags.global;
-      const scripts = flags.s || flags.script;
 
       const aliasDir = isGlobal ? bsFs.paths.alias.globals : await bsFs.getProjectDir(bsFs.paths.alias.project);
       const scriptDir = isGlobal ? bsFs.paths.bin.globals : await bsFs.getProjectDir(bsFs.paths.bin.project);
@@ -151,32 +158,16 @@ const commands = {
   },
 };
 
-function isHelp(params, flags) {
-  const needHelp = flags.h || flags.help;
-  if (!needHelp) {
-    return null;
-  }
-  if (params.length < 1) {
-    // compile global help;
-    // return global help;
-    return () => console.log('help is on its way');
-  }
-  const func = params.reduce((result, name) => {
-    if (!result[name]) {
-      // TODO: return help
-      throw new Error('Not a command');
-    } 
-    return result[name];
-   }, commands);
-  return !func.help ? () => console.log('help is on its way') : func.help;
+function giveHelp(params, { isHelp: needHelp }) {
+  return console.log(mainHelp);
 }
 
 
 function runner(input) {
   const { _, ...rest } = input;
-  const needHelp = isHelp(_, rest);
-  if (needHelp) {
-    return needHelp();
+  const props = getPropsFromFlags(rest);
+  if (props.isHelp) {
+    return giveHelp(_, props);
   }
   if (_[0] === 'r' || _[0] === 'run') {
     const params = [..._].slice(1);
@@ -193,7 +184,8 @@ function runner(input) {
     // TODO: return help
     return logger.info('Missing props');
   }
-  return func.exec(rest);
+
+  return func.exec(props);
 }
 
 runner(inputArgs);

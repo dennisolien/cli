@@ -1,5 +1,10 @@
 ## DO NOT USE THIS, or do, but you have been warned 💀
 
+## Versions
+deno 1.4.6
+v8 8.7.220.3
+typescript 4.0.3
+
 I do not recommend anyone to use this.
 
 I'm sick of having to write long commands like `npm run lint:XXX` `docker-compose build X -d`, to make it worse every project is different.
